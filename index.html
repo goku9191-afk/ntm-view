@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>·</title>
+<style>
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; margin: 0; }
+body {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: light-dark(#f9f9f7, #0d0d0d);
+  font: 15px system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: light-dark(#0b0b0b, #fff);
+}
+form { display: flex; gap: 8px; }
+input[type=password], button {
+  font: inherit; color: inherit;
+  background: light-dark(#fcfcfb, #1a1a19);
+  border: 1px solid light-dark(rgba(11,11,11,.14), rgba(255,255,255,.14));
+  border-radius: 8px; padding: 9px 14px;
+}
+input[type=password] { width: 220px; }
+input.bad { border-color: #d03b3b; animation: shake .3s; }
+@keyframes shake { 25% { translate: -5px 0 } 75% { translate: 5px 0 } }
+button { cursor: pointer; }
+.opt { position: fixed; bottom: 18px; left: 0; right: 0; text-align: center;
+       font-size: 12px; color: light-dark(#898781, #898781); }
+.opt input { vertical-align: -2px; }
+#msg { position: fixed; top: 18px; left: 0; right: 0; text-align: center;
+       font-size: 12px; color: #898781; display: none; }
+</style>
+</head>
+<body>
+<div id="msg">not available</div>
+<form id="f">
+  <input type="password" id="k" autocomplete="current-password" autofocus>
+  <button type="submit">→</button>
+</form>
+<label class="opt"><input type="checkbox" id="r"> remember</label>
+<script>
+"use strict";
+function b64u(s) {
+  s = s.trim().replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(s), out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+async function dec(keyStr, tokenStr) {
+  const key = b64u(keyStr);
+  if (key.length !== 32) throw new Error("key");
+  const t = b64u(tokenStr);
+  if (t.length < 57 || t[0] !== 0x80) throw new Error("data");
+  const sk = await crypto.subtle.importKey("raw", key.slice(0, 16),
+    { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  if (!await crypto.subtle.verify("HMAC", sk, t.slice(-32), t.slice(0, -32)))
+    throw new Error("key");
+  const ek = await crypto.subtle.importKey("raw", key.slice(16, 32),
+    { name: "AES-CBC" }, false, ["decrypt"]);
+  const pt = await crypto.subtle.decrypt({ name: "AES-CBC", iv: t.slice(9, 25) },
+    ek, t.slice(25, -32));
+  return new TextDecoder().decode(pt);
+}
+async function go(keyStr) {
+  let a, d;
+  try {
+    [a, d] = await Promise.all([
+      fetch("a.enc", { cache: "no-store" }), fetch("d.enc", { cache: "no-store" })]);
+    if (!a.ok || !d.ok) throw 0;
+    a = (await a.text()).trim(); d = (await d.text()).trim();
+  } catch { document.getElementById("msg").style.display = "block"; throw 0; }
+  const app = await dec(keyStr, a);
+  const data = JSON.parse(await dec(keyStr, d));
+  sessionStorage.setItem("k", keyStr);
+  if (document.getElementById("r").checked) localStorage.setItem("k", keyStr);
+  window.__DATA__ = data;
+  document.open(); document.write(app); document.close();
+}
+document.getElementById("f").addEventListener("submit", async e => {
+  e.preventDefault();
+  const inp = document.getElementById("k");
+  inp.classList.remove("bad");
+  try { await go(inp.value.trim()); }
+  catch { inp.classList.add("bad"); }
+});
+addEventListener("DOMContentLoaded", () => {
+  const saved = sessionStorage.getItem("k") || localStorage.getItem("k");
+  if (saved) go(saved).catch(() => {});
+});
+</script>
+</body>
+</html>

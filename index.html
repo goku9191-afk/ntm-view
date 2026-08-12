@@ -47,9 +47,16 @@ function b64u(s) {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
-async function dec(keyStr, tokenStr) {
-  const key = b64u(keyStr);
-  if (key.length !== 32) throw new Error("key");
+async function deriveKey(pw) {
+  const enc = new TextEncoder();
+  const base = await crypto.subtle.importKey("raw", enc.encode(pw),
+    "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: enc.encode("ntm.kdf.v1"), iterations: 600000, hash: "SHA-256" },
+    base, 256);
+  return new Uint8Array(bits);
+}
+async function dec(key, tokenStr) {
   const t = b64u(tokenStr);
   if (t.length < 57 || t[0] !== 0x80) throw new Error("data");
   const sk = await crypto.subtle.importKey("raw", key.slice(0, 16),
@@ -70,8 +77,9 @@ async function go(keyStr) {
     if (!a.ok || !d.ok) throw 0;
     a = (await a.text()).trim(); d = (await d.text()).trim();
   } catch { document.getElementById("msg").style.display = "block"; throw 0; }
-  const app = await dec(keyStr, a);
-  const data = JSON.parse(await dec(keyStr, d));
+  const key = await deriveKey(keyStr);
+  const app = await dec(key, a);
+  const data = JSON.parse(await dec(key, d));
   sessionStorage.setItem("k", keyStr);
   if (document.getElementById("r").checked) localStorage.setItem("k", keyStr);
   window.__DATA__ = data;
